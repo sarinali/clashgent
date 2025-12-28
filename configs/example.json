@@ -1,0 +1,50 @@
+{
+  "device": "mps",
+  "seed": null,
+
+  "screen": {
+    "width": 1080,
+    "height": 1920,
+    "arena_left": 0.05,
+    "arena_right": 0.95,
+    "arena_top": 0.15,
+    "arena_bottom": 0.70
+  },
+
+  "adb": {
+    "adb_path": "adb",
+    "device_id": "127.0.0.1:5555",
+    "bluestacks_path": "/Applications/BlueStacks.app",
+    "scripts_dir": null
+  },
+
+  "vision": {
+    "num_classes": 100,
+    "input_size": [416, 416],
+    "confidence_threshold": 0.5,
+    "nms_threshold": 0.4,
+    "model_path": null
+  },
+
+  "training": {
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_epsilon": 0.2,
+    "value_coef": 0.5,
+    "entropy_coef": 0.01,
+    "max_grad_norm": 0.5,
+    "rollout_length": 2048,
+    "batch_size": 64,
+    "n_epochs": 10,
+    "hidden_dim": 256,
+    "obs_dim": 256,
+    "frame_skip": 4,
+    "action_delay": 0.1,
+    "total_timesteps": 1000000,
+    "log_interval": 1,
+    "save_interval": 10,
+    "checkpoint_dir": "checkpoints",
+    "log_dir": "logs"
+  }
+}
