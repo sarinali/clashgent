@@ -8,42 +8,39 @@ from typing import Optional
 class CardType(Enum):
     """Card/troop types in Clash Royale.
 
-    TODO: Populate with actual card types from the game.
-    This enum should be extended with all cards you want to detect.
+    POC set: 10 troops + 2 buildings. Extend as needed.
+    Must match indices in ClashEnv._card_type_to_index().
     """
     UNKNOWN = "unknown"
 
-    # Common troops (examples - extend as needed)
-    # KNIGHT = "knight"
-    # ARCHERS = "archers"
-    # GIANT = "giant"
-    # MINIONS = "minions"
+    # POC Troops (index 1-10)
+    KNIGHT = "knight"
+    ARCHERS = "archers"
+    SKELETONS = "skeletons"
+    GIANT = "giant"
+    HOG_RIDER = "hog_rider"
+    VALKYRIE = "valkyrie"
+    MUSKETEER = "musketeer"
+    WIZARD = "wizard"
+    MINIONS = "minions"
+    GOBLIN = "goblin"
+
+    # POC Buildings (index 11-12)
+    CANNON = "cannon"
+    TESLA = "tesla"
+
+    # Future expansion - uncomment as needed:
     # BALLOON = "balloon"
     # WITCH = "witch"
     # SKELETON_ARMY = "skeleton_army"
-    # VALKYRIE = "valkyrie"
-    # MUSKETEER = "musketeer"
-    # HOG_RIDER = "hog_rider"
     # PRINCE = "prince"
     # BABY_DRAGON = "baby_dragon"
     # PEKKA = "pekka"
     # GOLEM = "golem"
-
-    # Spells (examples - extend as needed)
     # FIREBALL = "fireball"
     # ARROWS = "arrows"
     # ZAP = "zap"
-    # LIGHTNING = "lightning"
-    # ROCKET = "rocket"
-    # FREEZE = "freeze"
-
-    # Buildings (examples - extend as needed)
-    # CANNON = "cannon"
-    # TESLA = "tesla"
     # INFERNO_TOWER = "inferno_tower"
-    # BOMB_TOWER = "bomb_tower"
-    # GOBLIN_HUT = "goblin_hut"
-    # ELIXIR_COLLECTOR = "elixir_collector"
 
 
 class TroopSide(Enum):

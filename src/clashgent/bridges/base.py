@@ -77,44 +77,6 @@ class EmulatorBridge(ABC):
         """
         raise NotImplementedError
 
-    @abstractmethod
-    def swipe(
-        self,
-        x1: int,
-        y1: int,
-        x2: int,
-        y2: int,
-        duration_ms: int = 300,
-    ) -> bool:
-        """Perform a swipe gesture.
-
-        Args:
-            x1: Starting X coordinate
-            y1: Starting Y coordinate
-            x2: Ending X coordinate
-            y2: Ending Y coordinate
-            duration_ms: Duration of swipe in milliseconds
-
-        Returns:
-            True if swipe was successful
-        """
-        raise NotImplementedError
-
-    def long_press(self, x: int, y: int, duration_ms: int = 500) -> bool:
-        """Long press at screen coordinates.
-
-        Default implementation uses swipe with same start/end point.
-
-        Args:
-            x: X coordinate in pixels
-            y: Y coordinate in pixels
-            duration_ms: Duration to hold in milliseconds
-
-        Returns:
-            True if long press was successful
-        """
-        return self.swipe(x, y, x, y, duration_ms)
-
     # Connection methods
 
     @abstractmethod

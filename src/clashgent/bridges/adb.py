@@ -354,7 +354,7 @@ class ADBBridge(EmulatorBridge):
         card_index: Optional[int],
         target: Optional[Position],
     ) -> bool:
-        """Execute a card play action via drag."""
+        """Execute a card play action via tap-tap (select card, then place)."""
         if card_index is None or target is None:
             logger.warning("Invalid card play: missing card_index or target")
             return False
@@ -363,21 +363,28 @@ class ADBBridge(EmulatorBridge):
             logger.warning(f"Invalid card index: {card_index}")
             return False
 
-        # Get card position
+        # Step 1: Tap the card to select it
         card_x, card_y = self.CARD_POSITIONS[card_index]
         card_px, card_py = self._normalized_to_screen(card_x, card_y)
 
-        # Clamp target to arena
+        if not self.tap(card_px, card_py):
+            logger.warning(f"Failed to tap card {card_index}")
+            return False
+
+        # Brief delay for card selection to register
+        time.sleep(0.1)
+
+        # Step 2: Tap the target position to place the card
         target_x = max(self.ARENA_LEFT, min(self.ARENA_RIGHT, target.x))
         target_y = max(self.ARENA_TOP, min(self.ARENA_BOTTOM, target.y))
         target_px, target_py = self._normalized_to_screen(target_x, target_y)
 
-        success = self.swipe(card_px, card_py, target_px, target_py, duration_ms=200)
+        if not self.tap(target_px, target_py):
+            logger.warning(f"Failed to tap target ({target_x:.2f}, {target_y:.2f})")
+            return False
 
-        if success:
-            logger.debug(f"Played card {card_index} at ({target_x:.2f}, {target_y:.2f})")
-
-        return success
+        logger.debug(f"Played card {card_index} at ({target_x:.2f}, {target_y:.2f})")
+        return True
 
     def _normalized_to_screen(self, x: float, y: float) -> tuple[int, int]:
         """Convert normalized coordinates to screen pixels."""
@@ -402,38 +409,6 @@ class ADBBridge(EmulatorBridge):
             return False
         except Exception as e:
             logger.error(f"Tap failed: {e}")
-            return False
-
-    def swipe(
-        self,
-        x1: int,
-        y1: int,
-        x2: int,
-        y2: int,
-        duration_ms: int = 300,
-    ) -> bool:
-        """Perform a swipe gesture."""
-        cmd = self._build_adb_command(
-            "shell", "input", "swipe",
-            str(x1), str(y1), str(x2), str(y2), str(duration_ms),
-        )
-
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                timeout=max(5, duration_ms / 1000 + 2),
-            )
-            if result.returncode == 0:
-                logger.debug(f"Swipe from ({x1}, {y1}) to ({x2}, {y2})")
-                return True
-            logger.warning(f"Swipe failed: {result.stderr.decode('utf-8', errors='ignore')}")
-            return False
-        except subprocess.TimeoutExpired:
-            logger.error("Swipe command timed out")
-            return False
-        except Exception as e:
-            logger.error(f"Swipe failed: {e}")
             return False
 
     def tap_normalized(self, x: float, y: float) -> bool:

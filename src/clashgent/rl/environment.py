@@ -177,11 +177,28 @@ class ClashEnv(gym.Env):
 
         return obs, reward, terminated, truncated, info
 
-    def _encode_state(self, state: GameState) -> np.ndarray:
-        """Encode GameState to observation vector.
+    # Constants for state encoding
+    MAX_TROOPS_PER_SIDE = 20
+    TROOP_DIMS = 5  # x, y, type_id, health, is_air
+    NUM_TROOP_CLASSES = 12  # POC: 10 troops + 2 buildings (towers detected via pixels)
 
-        Converts the structured game state into a fixed-size vector
-        suitable for neural network input.
+    def _encode_state(self, state: GameState) -> np.ndarray:
+        """Encode GameState to observation vector using fixed-slot encoding.
+
+        Layout (256 dimensions):
+        - [0-2]     Game info: elixir, elixir_rate, match_time (3)
+        - [3-8]     Tower health: 3 friendly + 3 enemy (6)
+        - [9-44]    Cards in hand: 4 cards × 9 dims (36)
+        - [45-144]  Friendly troops: 20 slots × 5 dims (100)
+        - [145-244] Enemy troops: 20 slots × 5 dims (100)
+        - [245-255] Reserved (11)
+
+        Troop slot encoding (5 dims per slot):
+        - x position (0-1)
+        - y position (0-1)
+        - type_id (normalized by class count)
+        - health_ratio (0-1)
+        - is_air (0 = ground, 1 = air)
 
         Args:
             state: Current game state
@@ -189,47 +206,118 @@ class ClashEnv(gym.Env):
         Returns:
             Normalized observation vector
         """
-        # TODO: Implement proper state encoding
-        # This should include:
-        # - Elixir (normalized 0-1)
-        # - Card encodings (one-hot or embeddings)
-        # - Troop positions and types (grid or set encoding)
-        # - Tower health values
-        # - Match time remaining
-
         obs = np.zeros(self.obs_dim, dtype=np.float32)
 
         if state is None:
             return obs
 
-        # Basic encoding (placeholder)
-        # Index 0: Normalized elixir
+        # === Game info [0-2] ===
         obs[0] = state.elixir / 10.0
-
-        # Index 1: Elixir rate indicator
         obs[1] = (state.elixir_rate - 1.0) / 2.0  # 0 for 1x, 0.5 for 2x, 1 for 3x
+        obs[2] = state.match_time_remaining / 300.0  # 5 min max
 
-        # Index 2: Match time (normalized)
-        obs[2] = state.match_time_remaining / 300.0  # Assume 5 min max
-
-        # Index 3-6: Friendly tower health
+        # === Tower health [3-8] ===
         for i, tower in enumerate(state.friendly_towers[:3]):
             obs[3 + i] = tower.health_ratio
-
-        # Index 6-9: Enemy tower health
         for i, tower in enumerate(state.enemy_towers[:3]):
             obs[6 + i] = tower.health_ratio
 
-        # Index 9-13: Card playability (based on elixir)
+        # === Cards in hand [9-44] ===
+        # Each card: 8 dims for type embedding + 1 dim for elixir cost
         for i, card in enumerate(state.hand[:4]):
-            obs[9 + i] = 1.0 if card.can_play(state.elixir) else 0.0
+            base_idx = 9 + i * 9
+            # Type embedding (simplified: use type index normalized)
+            type_idx = self._card_type_to_index(card.card_type)
+            obs[base_idx] = type_idx / self.NUM_TROOP_CLASSES
+            # One-hot-ish encoding in remaining 7 dims
+            if type_idx < 7:
+                obs[base_idx + 1 + type_idx] = 1.0
+            # Elixir cost (normalized, max 10)
+            obs[base_idx + 8] = card.elixir_cost / 10.0
 
-        # Remaining indices could encode:
-        # - Troop positions (spatial grid)
-        # - Card type embeddings
-        # - Recent actions taken
+        # === Friendly troops [45-144] ===
+        friendly_troops = self._sort_troops_by_priority(
+            state.friendly_troops, state.friendly_towers
+        )
+        for i, troop in enumerate(friendly_troops[:self.MAX_TROOPS_PER_SIDE]):
+            base_idx = 45 + i * self.TROOP_DIMS
+            obs[base_idx] = troop.position.x
+            obs[base_idx + 1] = troop.position.y
+            obs[base_idx + 2] = self._card_type_to_index(troop.troop_type) / self.NUM_TROOP_CLASSES
+            obs[base_idx + 3] = troop.health_ratio
+            obs[base_idx + 4] = 1.0 if self._is_air_troop(troop.troop_type) else 0.0
+
+        # === Enemy troops [145-244] ===
+        enemy_troops = self._sort_troops_by_priority(
+            state.enemy_troops, state.friendly_towers
+        )
+        for i, troop in enumerate(enemy_troops[:self.MAX_TROOPS_PER_SIDE]):
+            base_idx = 145 + i * self.TROOP_DIMS
+            obs[base_idx] = troop.position.x
+            obs[base_idx + 1] = troop.position.y
+            obs[base_idx + 2] = self._card_type_to_index(troop.troop_type) / self.NUM_TROOP_CLASSES
+            obs[base_idx + 3] = troop.health_ratio
+            obs[base_idx + 4] = 1.0 if self._is_air_troop(troop.troop_type) else 0.0
+
+        # [245-255] Reserved for future use
 
         return obs
+
+    def _card_type_to_index(self, card_type) -> int:
+        """Map CardType enum to integer index for encoding."""
+        from ..game.state import CardType
+
+        type_map = {
+            CardType.UNKNOWN: 0,
+            CardType.KNIGHT: 1,
+            CardType.ARCHERS: 2,
+            CardType.SKELETONS: 3,
+            CardType.GIANT: 4,
+            CardType.HOG_RIDER: 5,
+            CardType.VALKYRIE: 6,
+            CardType.MUSKETEER: 7,
+            CardType.WIZARD: 8,
+            CardType.MINIONS: 9,
+            CardType.GOBLIN: 10,
+            CardType.CANNON: 11,
+            CardType.TESLA: 12,
+        }
+        return type_map.get(card_type, 0)
+
+    def _is_air_troop(self, card_type) -> bool:
+        """Check if troop type is an air unit."""
+        from ..game.state import CardType
+
+        air_troops = {
+            CardType.MINIONS,
+            # Add more as you expand: BALLOON, BABY_DRAGON, MEGA_MINION, etc.
+        }
+        return card_type in air_troops
+
+    def _sort_troops_by_priority(
+        self, troops: list, friendly_towers: list
+    ) -> list:
+        """Sort troops by threat priority for slot allocation.
+
+        Priority: closest to friendly towers first, then by health.
+        """
+        if not troops or not friendly_towers:
+            return troops
+
+        def tower_distance(troop):
+            # Find minimum distance to any friendly tower
+            min_dist = float('inf')
+            for tower in friendly_towers:
+                # Approximate tower positions (king=0.5, princesses=0.25/0.75)
+                if tower.tower_type == "king":
+                    tx, ty = 0.5, 0.1
+                else:
+                    tx, ty = 0.25, 0.2  # Simplified
+                dist = ((troop.position.x - tx) ** 2 + (troop.position.y - ty) ** 2) ** 0.5
+                min_dist = min(min_dist, dist)
+            return min_dist
+
+        return sorted(troops, key=lambda t: (tower_distance(t), -t.health_ratio))
 
     def _calculate_reward(self, action: GameAction) -> float:
         """Calculate reward from state transition.
