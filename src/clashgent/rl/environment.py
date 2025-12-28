@@ -7,8 +7,8 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from ..bridges.base import ActionBridge, ScreenshotBridge
-from ..game.actions import ActionSpace, ActionType, GameAction
+from ..bridges.base import EmulatorBridge
+from ..game.actions import ActionSpace, GameAction
 from ..game.state import GameState
 from ..verifiers.base import Verifier
 from ..vision.extractor import StateExtractor
@@ -20,12 +20,11 @@ class ClashEnv(gym.Env):
     This environment bridges the RL agent with the actual game running
     in an emulator. It handles:
     - State observation via screenshot capture and vision processing
-    - Action execution via emulator input bridge
+    - Action execution via emulator input
     - Reward calculation with optional verifier shaping
 
     Attributes:
-        screenshot_bridge: Interface for capturing game screenshots
-        action_bridge: Interface for executing game actions
+        bridge: Emulator bridge for screenshots and actions
         state_extractor: Vision system for extracting game state
         verifiers: List of reward shaping verifiers
         frame_skip: Number of frames to skip between actions
@@ -35,8 +34,7 @@ class ClashEnv(gym.Env):
 
     def __init__(
         self,
-        screenshot_bridge: ScreenshotBridge,
-        action_bridge: ActionBridge,
+        bridge: EmulatorBridge,
         state_extractor: StateExtractor,
         verifiers: Optional[list[Verifier]] = None,
         frame_skip: int = 4,
@@ -46,8 +44,7 @@ class ClashEnv(gym.Env):
         """Initialize Clash Royale environment.
 
         Args:
-            screenshot_bridge: Screenshot capture interface
-            action_bridge: Action execution interface
+            bridge: Emulator bridge for screenshots and actions
             state_extractor: Vision system for game state extraction
             verifiers: Optional reward shaping verifiers
             frame_skip: Frames to skip between agent decisions
@@ -56,8 +53,7 @@ class ClashEnv(gym.Env):
         """
         super().__init__()
 
-        self.screenshot_bridge = screenshot_bridge
-        self.action_bridge = action_bridge
+        self.bridge = bridge
         self.state_extractor = state_extractor
         self.verifiers = verifiers or []
         self.frame_skip = frame_skip
@@ -67,7 +63,6 @@ class ClashEnv(gym.Env):
         self.action_space_def = ActionSpace()
 
         # Define observation space
-        # Using encoded game state vector
         self.observation_space = spaces.Box(
             low=0.0,
             high=1.0,
@@ -122,7 +117,7 @@ class ClashEnv(gym.Env):
         self._step_count = 0
 
         # Capture initial state
-        screenshot = self.screenshot_bridge.capture()
+        screenshot = self.bridge.capture()
         self._last_screenshot = screenshot
         self._current_state = self.state_extractor.extract(screenshot)
         self._prev_state = None
@@ -154,13 +149,13 @@ class ClashEnv(gym.Env):
         game_action = self.action_space_def.to_discrete_action(action)
 
         # Execute action
-        success = self.action_bridge.execute(game_action)
+        success = self.bridge.execute(game_action)
 
         # Frame skip - wait for game to progress
         time.sleep(self.action_delay * self.frame_skip)
 
         # Capture new state
-        screenshot = self.screenshot_bridge.capture()
+        screenshot = self.bridge.capture()
         self._last_screenshot = screenshot
         self._current_state = self.state_extractor.extract(screenshot)
 

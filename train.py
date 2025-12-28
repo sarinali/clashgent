@@ -2,21 +2,17 @@
 """Training entry point for Clash Royale RL agent.
 
 This script demonstrates the complete training pipeline:
-1. Initialize emulator bridges (screenshot + action)
+1. Initialize emulator bridge (ADB connection)
 2. Initialize vision system for game state extraction
 3. Create the Gym environment
 4. Initialize the policy network
 5. Run PPO training
 
 Usage:
-    # With real emulator (not yet implemented)
-    python train.py
-
-    # With mock components for testing
-    python train.py --mock
+    python train.py --config configs/macos.json
 
     # Resume from checkpoint
-    python train.py --resume checkpoints/checkpoint_100.pt
+    python train.py --config configs/macos.json --resume checkpoints/checkpoint_100.pt
 """
 
 import argparse
@@ -25,13 +21,11 @@ from pathlib import Path
 
 import torch
 
-from clashgent.bridges.action import ADBActionBridge, MockActionBridge
-from clashgent.bridges.screenshot import ADBScreenshotBridge, MockScreenshotBridge
+from clashgent.bridges import ADBBridge
 from clashgent.config import Config, TrainingConfig
 from clashgent.rl.environment import ClashEnv
 from clashgent.rl.policy import ActorCritic
 from clashgent.rl.trainer import PPOTrainer
-from clashgent.verifiers.registry import VerifierRegistry
 from clashgent.vision.extractor import MockObjectClassifier, StateExtractor
 
 # Configure logging
@@ -43,95 +37,37 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def create_mock_environment(config: Config) -> ClashEnv:
-    """Create environment with mock bridges for testing.
+def create_environment(config: Config) -> ClashEnv:
+    """Create environment with ADB bridge.
 
     Args:
         config: Configuration object
 
     Returns:
-        ClashEnv with mock components
-    """
-    logger.info("Creating mock environment for testing...")
-
-    # Mock bridges
-    screenshot_bridge = MockScreenshotBridge(
-        width=config.screen.width,
-        height=config.screen.height,
-    )
-    action_bridge = MockActionBridge()
-
-    # Mock vision
-    classifier = MockObjectClassifier()
-    state_extractor = StateExtractor(classifier)
-
-    # Create environment
-    env = ClashEnv(
-        screenshot_bridge=screenshot_bridge,
-        action_bridge=action_bridge,
-        state_extractor=state_extractor,
-        verifiers=[],
-        frame_skip=config.training.frame_skip,
-        action_delay=0.0,  # No delay for mock
-        obs_dim=config.training.obs_dim,
-    )
-
-    return env
-
-
-def create_real_environment(config: Config) -> ClashEnv:
-    """Create environment with real ADB bridges.
-
-    Args:
-        config: Configuration object
-
-    Returns:
-        ClashEnv with ADB bridges
+        ClashEnv connected to emulator
 
     Raises:
-        NotImplementedError: Until bridges are fully implemented
+        ConnectionError: If emulator connection fails
     """
-    logger.info("Creating real environment with ADB bridges...")
+    logger.info("Creating environment with ADB bridge...")
 
-    # ADB bridges
-    screenshot_bridge = ADBScreenshotBridge(
+    # Create unified bridge (initializes connection, updates config with screen size)
+    bridge = ADBBridge(
         adb_path=config.adb.adb_path,
         device_id=config.adb.device_id,
+        config=config,
         bluestacks_path=config.adb.bluestacks_path,
     )
-    action_bridge = ADBActionBridge(
-        adb_path=config.adb.adb_path,
-        device_id=config.adb.device_id,
-        screen_width=config.screen.width,
-        screen_height=config.screen.height,
-    )
-
-    # Check connection
-    if not screenshot_bridge.is_connected():
-        raise ConnectionError(
-            "Cannot connect to emulator. "
-            "Make sure BlueStacks is running and ADB is enabled."
-        )
 
     # TODO: Replace with trained vision model
-    # For now, use mock classifier
     classifier = MockObjectClassifier()
     state_extractor = StateExtractor(classifier)
 
-    # Create verifiers (optional reward shaping)
-    # Uncomment and implement verifiers as needed:
-    # verifiers = [
-    #     VerifierRegistry.create("tower_damage", weight=1.0),
-    #     VerifierRegistry.create("elixir_leak", weight=0.5),
-    # ]
-    verifiers = []
-
     # Create environment
     env = ClashEnv(
-        screenshot_bridge=screenshot_bridge,
-        action_bridge=action_bridge,
+        bridge=bridge,
         state_extractor=state_extractor,
-        verifiers=verifiers,
+        verifiers=[],
         frame_skip=config.training.frame_skip,
         action_delay=config.training.action_delay,
         obs_dim=config.training.obs_dim,
@@ -147,9 +83,10 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--mock",
-        action="store_true",
-        help="Use mock environment for testing",
+        "--config",
+        type=Path,
+        required=True,
+        help="Path to JSON config file (e.g., configs/macos.json)",
     )
     parser.add_argument(
         "--resume",
@@ -160,58 +97,43 @@ def main():
     parser.add_argument(
         "--device",
         type=str,
-        default="cuda" if torch.cuda.is_available() else "cpu",
-        help="PyTorch device",
+        default=None,
+        help="PyTorch device (default: cuda if available, else cpu)",
     )
     parser.add_argument(
         "--timesteps",
         type=int,
-        default=1_000_000,
-        help="Total training timesteps",
+        default=None,
+        help="Total training timesteps (overrides config)",
     )
     parser.add_argument(
         "--lr",
         type=float,
-        default=3e-4,
-        help="Learning rate",
+        default=None,
+        help="Learning rate (overrides config)",
     )
     parser.add_argument(
         "--checkpoint-dir",
         type=Path,
-        default=Path("checkpoints"),
-        help="Directory for saving checkpoints",
-    )
-    parser.add_argument(
-        "--config",
-        type=Path,
         default=None,
-        help="Path to JSON config file (e.g., configs/macos.json). "
-        "If not provided, uses default config with command-line overrides.",
+        help="Directory for saving checkpoints (overrides config)",
     )
     args = parser.parse_args()
 
     # Load configuration
-    if args.config:
-        config = Config.from_json(args.config)
-        # Override with command-line arguments if provided
-        if args.device != "cuda" or not torch.cuda.is_available():
-            config.device = args.device
-        if args.timesteps != 1_000_000:
-            config.training.total_timesteps = args.timesteps
-        if args.lr != 3e-4:
-            config.training.learning_rate = args.lr
-        if args.checkpoint_dir != Path("checkpoints"):
-            config.training.checkpoint_dir = args.checkpoint_dir
-    else:
-        # Create configuration from defaults and command-line args
-        config = Config(
-            device=args.device,
-            training=TrainingConfig(
-                total_timesteps=args.timesteps,
-                learning_rate=args.lr,
-                checkpoint_dir=args.checkpoint_dir,
-            ),
-        )
+    config = Config.from_json(args.config)
+
+    # Apply command-line overrides
+    if args.device:
+        config.device = args.device
+    elif not torch.cuda.is_available() and config.device == "cuda":
+        config.device = "cpu"
+    if args.timesteps:
+        config.training.total_timesteps = args.timesteps
+    if args.lr:
+        config.training.learning_rate = args.lr
+    if args.checkpoint_dir:
+        config.training.checkpoint_dir = args.checkpoint_dir
 
     logger.info("=" * 60)
     logger.info("Clashgent - Clash Royale RL Training")
@@ -221,15 +143,7 @@ def main():
     logger.info(f"Checkpoint dir: {config.training.checkpoint_dir}")
 
     # Create environment
-    if args.mock:
-        env = create_mock_environment(config)
-    else:
-        try:
-            env = create_real_environment(config)
-        except (ConnectionError, NotImplementedError) as e:
-            logger.error(f"Failed to create real environment: {e}")
-            logger.info("Falling back to mock environment...")
-            env = create_mock_environment(config)
+    env = create_environment(config)
 
     # Create policy network
     policy = ActorCritic(

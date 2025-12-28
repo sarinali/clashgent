@@ -25,7 +25,7 @@
             "program": "${workspaceFolder}/train.py",
             "args": [
                 "--config",
-                "configs/config1_macos.toml"
+                "configs/example.json"
             ],
             "console": "integratedTerminal",
             "justMyCode": true,
@@ -38,7 +38,7 @@
             "program": "${workspaceFolder}/train.py",
             "args": [
                 "--config",
-                "configs/config1_macos.toml",
+                "configs/example.json",
                 "--resume",
                 "checkpoints/interrupted.pt"
             ],

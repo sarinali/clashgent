@@ -2,3 +2,6 @@ screenshots/
 captures/
 .venv/
 checkpoints/
+
+__pycache__/
+*.pyc

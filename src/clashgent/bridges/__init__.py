@@ -1,12 +1,9 @@
-"""Emulator interaction bridges for screenshot capture and action execution."""
+"""Emulator interaction bridge for screenshot capture and action execution."""
 
-from .base import ScreenshotBridge, ActionBridge
-from .screenshot import ADBScreenshotBridge
-from .action import ADBActionBridge
+from .base import EmulatorBridge
+from .adb import ADBBridge
 
 __all__ = [
-    "ScreenshotBridge",
-    "ActionBridge",
-    "ADBScreenshotBridge",
-    "ADBActionBridge",
+    "EmulatorBridge",
+    "ADBBridge",
 ]
